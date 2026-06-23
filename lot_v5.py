@@ -76,8 +76,9 @@ class MultiStrategyAnalyzer:
                 creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
             else:
                 print("Cloud Mode: Loading credentials from Environment Variable...")
-                # Format ပျက်နေသော \n (New Line) များကို ကုဒ်ထဲမှ အတင်းပြန်လည် ပြုပြင်ပေးခြင်း
-                fixed_json = creds_json.replace('\n', '\\n').replace('\\\\n', '\\n')
+                # .strip() ထည့်ပေးခြင်းဖြင့် ရှေ့နှင့်နောက်က space အပိုများကို ဖယ်ရှားပေးပါမည်
+                cleaned_json = creds_json.strip()
+                fixed_json = cleaned_json.replace('\n', '\\n').replace('\\\\n', '\\n')
                 info = json.loads(fixed_json, strict=False)
                 creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
                 
