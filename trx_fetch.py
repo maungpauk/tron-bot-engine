@@ -10,18 +10,34 @@ import pytz
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+from threading import Thread
+from flask import Flask
+
+# ---------------- Flask Web Server For Render ----------------
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "TRON Raw Fetcher is Running Live!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
 
 # ---------------- Configuration ----------------
 BLOCKS_URL = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=30"
-GOOGLE_SHEET_NAME = "trx_fetch"  # သင်ဆောက်ထားတဲ့ Google Sheet အမည်
-CREDENTIALS_FILE = "credentials.json"  # Google Cloud က ဒေါင်းလာတဲ့ ဖိုင်အမည်
+GOOGLE_SHEET_NAME = "trx_fetch"  
+CREDENTIALS_FILE = "credentials.json"  
 
 # ---------------- Global State ----------------
 MYANMAR_TZ = pytz.timezone('Asia/Yangon')
 UTC_TZ = pytz.UTC
 
 last_processed_block_height = 0
-# Memory Leak မဖြစ်စေရန် ရေးပြီးသား Block Height ၅၀၀၀ ထက်ကျော်ရင် အဟောင်းတွေကို ဖျက်မည့် စနစ်
 written_rows = set() 
 MAX_MEMORY_KEYS = 5000 
 
@@ -33,7 +49,6 @@ def connect_google_sheets():
         client = gspread.authorize(creds)
         sheet = client.open(GOOGLE_SHEET_NAME).sheet1
         
-        # Sheet အသစ်ဖြစ်နေရင် Header Row ထည့်ပေးခြင်း
         if not sheet.get_all_values():
             sheet.append_row(['Type', 'Period', 'Block height', 'Block time', 'Hash value', 'hash_digit', 'last_5digit', 'Result_Digit', 'Result_Char'])
         
@@ -67,9 +82,8 @@ def save_to_google_sheet(sheet, block_data):
     if key in written_rows: 
         return
         
-    # Memory Leak Protection
     if len(written_rows) >= MAX_MEMORY_KEYS:
-        written_rows.clear() # ၂၄ နာရီလုံး Run ရင် RAM ပြည့်မသွားအောင် list ကို ရှင်းထုတ်ပေးခြင်း
+        written_rows.clear() 
         
     written_rows.add(key)
     
@@ -124,12 +138,13 @@ def main_loop():
     print("  TRON DATA FETCHER - Cloud & Google Sheets Live Version")
     print("=" * 70)
     
-    # Initial Connect
+    # Render Port ကို စတင်ဖွင့်လှစ်ပေးခြင်း
+    keep_alive()
+    
     sheet = connect_google_sheets()
     
     while True:
         try:
-            # ၅ မိနစ်တစ်ခါ သို့မဟုတ် Connection ကျသွားရင် ပြန်ချိတ်ပေးမည့်စနစ်
             if sheet is None:
                 print("Attempting to reconnect to Google Sheets...")
                 sheet = connect_google_sheets()
@@ -145,7 +160,6 @@ def main_loop():
                 
                 last_processed_block_height = bd['Block height']
             
-            # API Rate Limit မထိစေရန်နှင့် တည်ငြိမ်စေရန် 3 စက္ကန့် စောင့်ခိုင်းထားပါတယ်
             time.sleep(3)
             
         except Exception as e:

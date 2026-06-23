@@ -2,6 +2,8 @@
 # Version 5.5 (Cloud & Google Sheets Optimized)
 # Strategies: Digit Only | Hexadecimal | Digit Master Engine
 
+from threading import Thread
+from flask import Flask
 import sys
 import requests
 from datetime import datetime
@@ -362,6 +364,24 @@ class MultiStrategyAnalyzer:
                 traceback.print_exc()
                 time.sleep(5)
 
+# --- Flask Web Server For Render (lot_v5) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "TRON Prediction Engine is Running Live!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
+
 if __name__ == "__main__":
+    # Render Web Service အတွက် Port ဖွင့်ပေးခြင်း
+    keep_alive()
+    
     analyzer = MultiStrategyAnalyzer()
     analyzer.run()
