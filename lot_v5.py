@@ -373,15 +373,17 @@ def home():
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
 
 def keep_alive():
-    t = Thread(target=run_web)
+    t = Thread(target=run_web, daemon=True)
     t.start()
 
 if __name__ == "__main__":
-    # Render Web Service အတွက် Port ဖွင့်ပေးခြင်း
+    # ၁။ ဝဘ်ဆာဗာကို နောက်ကွယ်တွင် Run ရန် တို့ပေးခြင်း
     keep_alive()
+    time.sleep(2)
     
+    # ၂။ ပင်မ Analysis Engine ကို စတင်ပတ်ခြင်း
     analyzer = MultiStrategyAnalyzer()
     analyzer.run()

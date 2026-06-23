@@ -22,10 +22,12 @@ def home():
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    # Thread ထဲမှာ သေချာပတ်နိုင်ဖို့ use_reloader=False ထည့်ပေးရပါမယ်
+    app.run(host='0.0.0.0', port=port, use_reloader=False)
 
 def keep_alive():
-    t = Thread(target=run_web)
+    # daemon=True ထည့်ပေးခြင်းဖြင့် Flask ကြောင့် ကုဒ်တစ်ခုလုံး ညှပ်မနေတော့ပါဘူး
+    t = Thread(target=run_web, daemon=True)
     t.start()
 
 # ---------------- Configuration ----------------
@@ -138,11 +140,14 @@ def main_loop():
     print("  TRON DATA FETCHER - Cloud & Google Sheets Live Version")
     print("=" * 70)
     
-    # Render Port ကို စတင်ဖွင့်လှစ်ပေးခြင်း
+    # ၁။ ဝဘ်ဆာဗာကို အရင်ဆုံး နောက်ကွယ်မှာ ပတ်ခိုင်းလိုက်တယ်
     keep_alive()
+    time.sleep(2) # Server တက်လာအောင် ၂ စက္ကန့် စောင့်ပေးခြင်း
     
+    # ၂။ ပြီးမှ Google Sheets ကို ချိတ်ဆက်တယ်
     sheet = connect_google_sheets()
     
+    # ၃။ ဤ Loop ကြီးသည် ယခုအခါ ပိတ်ဆို့မှုမရှိဘဲ ပုံမှန် စတင်ပတ်ပါလိမ့်မည်
     while True:
         try:
             if sheet is None:
