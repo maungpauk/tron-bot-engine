@@ -72,9 +72,13 @@ class MultiStrategyAnalyzer:
             
             creds_json = os.environ.get("GOOGLE_CREDENTIALS")
             if not creds_json:
+                print("Local Mode: Loading credentials.json file...")
                 creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
             else:
-                info = json.loads(creds_json)
+                print("Cloud Mode: Loading credentials from Environment Variable...")
+                # Format ပျက်နေသော \n (New Line) များကို ကုဒ်ထဲမှ အတင်းပြန်လည် ပြုပြင်ပေးခြင်း
+                fixed_json = creds_json.replace('\n', '\\n').replace('\\\\n', '\\n')
+                info = json.loads(fixed_json, strict=False)
                 creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
                 
             client = gspread.authorize(creds)

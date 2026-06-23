@@ -47,25 +47,20 @@ def connect_google_sheets():
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         
-        # Render Environment Variable မှ သော့ချက်စာသားကို ရှာဖတ်ခြင်း
         creds_json = os.environ.get("GOOGLE_CREDENTIALS")
         
         if not creds_json:
-            # စက်ထဲတွင် Run လျှင် credentials.json ဖိုင်ကို ပုံမှန်အတိုင်းဖတ်မည်
             print("Local Mode: Loading credentials.json file...")
             creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
         else:
-            # Render ပေါ်တွင် Run လျှင် စာသားမှတစ်ဆင့် တိုက်ရိုက်ဖတ်မည်
             print("Cloud Mode: Loading credentials from Environment Variable...")
-            info = json.loads(creds_json)
+            # format ပျက်နေတဲ့ \n (new line) တွေကို code ထဲကနေ အတင်းပြန်ပြုပြင်ပေးခြင်း
+            fixed_json = creds_json.replace('\n', '\\n').replace('\\\\n', '\\n')
+            info = json.loads(fixed_json, strict=False)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
             
         client = gspread.authorize(creds)
         sheet = client.open(GOOGLE_SHEET_NAME).sheet1
-        
-        if not sheet.get_all_values():
-            sheet.append_row(['Type', 'Period', 'Block height', 'Block time', 'Hash value', 'hash_digit', 'last_5digit', 'Result_Digit', 'Result_Char'])
-        
         return sheet
     except Exception as e:
         print(f"Google Sheets Connection Error (trx_fetch): {e}")
