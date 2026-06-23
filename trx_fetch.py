@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # trx_fetch.py - Fetch and save all TRON block data to Google Sheets
-# Optimized for 24/7 Cloud Running (Render Compatible)
+# Optimized for 24/7 Cloud Running (Environment Variable Configured)
 
 import requests
 import time
@@ -8,6 +8,7 @@ import os
 import re
 import pytz
 import gspread
+import json
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from threading import Thread
@@ -22,11 +23,9 @@ def home():
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
-    # Thread ထဲမှာ သေချာပတ်နိုင်ဖို့ use_reloader=False ထည့်ပေးရပါမယ်
     app.run(host='0.0.0.0', port=port, use_reloader=False)
 
 def keep_alive():
-    # daemon=True ထည့်ပေးခြင်းဖြင့် Flask ကြောင့် ကုဒ်တစ်ခုလုံး ညှပ်မနေတော့ပါဘူး
     t = Thread(target=run_web, daemon=True)
     t.start()
 
@@ -47,7 +46,20 @@ MAX_MEMORY_KEYS = 5000
 def connect_google_sheets():
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+        
+        # Render Environment Variable မှ သော့ချက်စာသားကို ရှာဖတ်ခြင်း
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+        
+        if not creds_json:
+            # စက်ထဲတွင် Run လျှင် credentials.json ဖိုင်ကို ပုံမှန်အတိုင်းဖတ်မည်
+            print("Local Mode: Loading credentials.json file...")
+            creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+        else:
+            # Render ပေါ်တွင် Run လျှင် စာသားမှတစ်ဆင့် တိုက်ရိုက်ဖတ်မည်
+            print("Cloud Mode: Loading credentials from Environment Variable...")
+            info = json.loads(creds_json)
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
+            
         client = gspread.authorize(creds)
         sheet = client.open(GOOGLE_SHEET_NAME).sheet1
         
@@ -56,13 +68,10 @@ def connect_google_sheets():
         
         return sheet
     except Exception as e:
-        print(f"Google Sheets Connection Error: {e}")
+        print(f"Google Sheets Connection Error (trx_fetch): {e}")
         return None
 
 # ---------------- Utilities ----------------
-def get_myanmar_time():
-    return datetime.now(UTC_TZ).astimezone(MYANMAR_TZ)
-
 def clean_hex(hex_str):
     if not hex_str: return ''
     s = str(hex_str).strip().lstrip('*').replace('0x', '')
@@ -90,7 +99,6 @@ def save_to_google_sheet(sheet, block_data):
     written_rows.add(key)
     
     if sheet is None:
-        print("Skipping write: Google Sheet connection is offline.")
         return
         
     try:
@@ -106,7 +114,7 @@ def save_to_google_sheet(sheet, block_data):
             block_data.get("Result_Char", "")
         ]
         sheet.append_row(row_data)
-        print(f" Saved to Cloud: Type {block_data.get('Type')} | Period {block_data.get('Period')} | Height {key}")
+        print(f" [Saved to Cloud] Type {block_data.get('Type')} | Period {block_data.get('Period')} | Height {key}")
     except Exception as e:
         print(f"Failed to write to Google Sheet: {e}")
 
@@ -137,17 +145,14 @@ def main_loop():
     global last_processed_block_height
     
     print("=" * 70)
-    print("  TRON DATA FETCHER - Cloud & Google Sheets Live Version")
+    print("  TRON DATA FETCHER - Cloud Live Version")
     print("=" * 70)
     
-    # ၁။ ဝဘ်ဆာဗာကို အရင်ဆုံး နောက်ကွယ်မှာ ပတ်ခိုင်းလိုက်တယ်
     keep_alive()
-    time.sleep(2) # Server တက်လာအောင် ၂ စက္ကန့် စောင့်ပေးခြင်း
+    time.sleep(2)
     
-    # ၂။ ပြီးမှ Google Sheets ကို ချိတ်ဆက်တယ်
     sheet = connect_google_sheets()
     
-    # ၃။ ဤ Loop ကြီးသည် ယခုအခါ ပိတ်ဆို့မှုမရှိဘဲ ပုံမှန် စတင်ပတ်ပါလိမ့်မည်
     while True:
         try:
             if sheet is None:

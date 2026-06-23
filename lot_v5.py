@@ -1,6 +1,5 @@
 # TRON Multi-Strategy Master Engine
-# Version 5.5 (Cloud & Google Sheets Optimized)
-# Strategies: Digit Only | Hexadecimal | Digit Master Engine
+# Version 5.5 (Cloud & Google Sheets Variable Optimized)
 
 from threading import Thread
 from flask import Flask
@@ -13,6 +12,7 @@ import re
 import pytz
 import traceback
 import gspread
+import json
 from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Timezone Configuration ---
@@ -27,9 +27,9 @@ def get_utc_time():
 
 # --- Configuration Constants ---
 API_URL = "https://apilist.tronscanapi.com/api/block?sort=-number&limit=150" 
-GOOGLE_SHEET_NAME = "trx_fetch"  # trx_fetch နဲ့ အတူတူသုံးမည့် Sheet ဖိုင်အမည်
-WORKSHEET_NAME = "Lot_V5_Logs"       # lot_v5 အတွက် သီးသန့် Tab (Worksheet) အမည်
-CREDENTIALS_FILE = "credentials.json" # စောစောက ဒေါင်းလုဒ်လုပ်ထားသော Key ဖိုင်
+GOOGLE_SHEET_NAME = "trx_fetch"  
+WORKSHEET_NAME = "Lot_V5_Logs"       
+CREDENTIALS_FILE = "credentials.json" 
 
 POLL_INTERVAL_SECONDS = 1
 GROUP_BOUNDARY_SECOND = 57  
@@ -63,24 +63,28 @@ class MultiStrategyAnalyzer:
         # Last Completed UI Cache
         self.last_completed_output = ""
 
-        # Google Sheets အား စတင်ချိတ်ဆက်ခြင်း
         self.sheet = self.connect_google_sheets()
 
     # --- Google Sheets Tab သီးသန့်ဆောက်ပြီး ချိတ်ဆက်သည့် စနစ် ---
     def connect_google_sheets(self):
         try:
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+            
+            creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+            if not creds_json:
+                creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+            else:
+                info = json.loads(creds_json)
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
+                
             client = gspread.authorize(creds)
             spreadsheet = client.open(GOOGLE_SHEET_NAME)
             
-            # ဒုတိယမြောက် Tab (Worksheet) ရှိမရှိစစ်ဆေးပြီး မရှိလျှင် အလိုအလျောက်ဆောက်ပေးခြင်း
             try:
                 sheet = spreadsheet.worksheet(WORKSHEET_NAME)
             except gspread.exceptions.WorksheetNotFound:
                 sheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME, rows="5000", cols="20")
             
-            # Header Columns များ ထည့်သွင်းခြင်း
             if not sheet.get_all_values():
                 sheet.append_row([
                     "date", "block_time", "block_id", "result_id",
@@ -101,7 +105,6 @@ class MultiStrategyAnalyzer:
         sequence = current_minute + 1
         return f"{date_part}{series_part}{sequence:04d}"
 
-    # --- Strategy Logic 1: Digit Only ---
     def get_digit_only_group(self, hash_value):
         if not hash_value: return None
         digits = "".join(re.findall(r'\d', hash_value))
@@ -109,13 +112,11 @@ class MultiStrategyAnalyzer:
         val = int(digits[-1])
         return "B" if val in [5, 6, 7, 8, 9] else "S"
 
-    # --- Strategy Logic 2: Hexadecimal ---
     def get_hexadecimal_group(self, hash_value):
         if not hash_value: return None
         last_char = hash_value[-1].lower()
         return "S" if last_char in "01234567" else "B"
 
-    # --- Strategy Logic 3: Digit Master Engine ---
     def get_digit_master_group(self, hash_value):
         if not hash_value: return None
         digits = "".join(re.findall(r'\d', hash_value))
@@ -199,7 +200,6 @@ class MultiStrategyAnalyzer:
         b_time = datetime.fromtimestamp(block['timestamp'] / 1000, tz=MYANMAR_TZ)
         hash_val = block['hash']
         
-        # --- Strategy 1: Digit Only Logic ---
         if b_time.second == self.best_secs["do"] and self.best_secs["do"] != -1:
             src = self.get_digit_only_group(hash_val)
             if src:
@@ -210,7 +210,6 @@ class MultiStrategyAnalyzer:
                     self.current_predictions["do"] = src
                     self.trigger_details["do"] = f"{self.best_secs['do']} -> {src}"
 
-        # --- Strategy 2: Hexadecimal Logic ---
         if b_time.second == self.best_secs["hex"] and self.best_secs["hex"] != -1:
             src = self.get_hexadecimal_group(hash_val)
             if src:
@@ -221,7 +220,6 @@ class MultiStrategyAnalyzer:
                     self.current_predictions["hex"] = src
                     self.trigger_details["hex"] = f"{self.best_secs['hex']} -> {src}"
 
-        # --- Strategy 3: Digit Master Engine ---
         if b_time.second == self.best_secs["dm"] and self.best_secs["dm"] != -1:
             src = self.get_digit_master_group(hash_val)
             if src:
@@ -235,7 +233,6 @@ class MultiStrategyAnalyzer:
                     self.current_predictions["dm"] = src
                     self.trigger_details["dm"] = f"{self.best_secs['dm']} -> {src}"
 
-        # --- Process Log & Results Writing at Exactly :54 ---
         if b_time.second == RESULT_CHECK_SECOND and not self.predictions_made_for_period:
             target_period = self._generate_prediction_id()
             self.verify_and_log_results(target_period, block, b_time.strftime("%Y-%m-%d"), b_time.strftime("%H:%M:%S"))
@@ -264,7 +261,6 @@ class MultiStrategyAnalyzer:
         disp_hex = "Skipped" if outcomes["hex"] == "Skipped" else self.update_streak("hex", outcomes["hex"])
         disp_dm = "Skipped" if outcomes["dm"] == "Skipped" else self.update_streak("dm", outcomes["dm"])
 
-        # UI Terminal အတွက် Cache သိမ်းခြင်း
         sb = []
         sb.append(f"--- Last Completed Group ---")
         sb.append(f"ID: {target_period} | Block: {result_block_id}")
@@ -275,7 +271,6 @@ class MultiStrategyAnalyzer:
         sb.append(f"--------------------------")
         self.last_completed_output = "\n".join(sb)
 
-        # --- GOOGLE SHEETS CLOUD STORAGE SYSTEM ---
         if self.sheet is None:
             self.sheet = self.connect_google_sheets()
 
@@ -293,7 +288,6 @@ class MultiStrategyAnalyzer:
                 print(f"Google Sheets Row Appending Error: {e}")
 
     def print_status(self):
-        # Cloud Server ပေါ်တွင် Log စနစ်များ ဖတ်ရလွယ်ကူစေရန် os.system('clear') အစား ပုံမှန်တန်းစီထွက်သော စနစ်ပြောင်းထားသည်
         now_str = get_myanmar_time().strftime("%Y-%m-%d %H:%M:%S")
         print(f"\n=================== LIVE DASHBOARD ({now_str}) ===================")
         
@@ -305,19 +299,9 @@ class MultiStrategyAnalyzer:
             b_time = datetime.fromtimestamp(block['timestamp'] / 1000, tz=MYANMAR_TZ)
             sec = b_time.second
             print(f"Block: {block['Block height']} | Time: {sec:02d}s | Hash: ...{block['hash'][-8:]}")
-            
-            if sec == self.best_secs["do"] and self.best_secs["do"] != -1 and self.trigger_details["do"] != "Skip" and self.best_secs["do"] <= 42:
-                print(f"  └─► Triggered: Digit Only Logic : {self.trigger_details['do']}")
-            if sec == self.best_secs["hex"] and self.best_secs["hex"] != -1 and self.trigger_details["hex"] != "Skip" and self.best_secs["hex"] <= 42:
-                print(f"  └─► Triggered: Hexadecimal Logic: {self.trigger_details['hex']}")
-            if sec == self.best_secs["dm"] and self.best_secs["dm"] != -1 and self.trigger_details["dm"] != "Skip" and self.best_secs["dm"] <= 42:
-                print(f"  └─► Triggered: Digit Master Engine: {self.trigger_details['dm']}")
 
         target_period = self._generate_prediction_id()
         print(f"\nCurrent Target Prediction ID: {target_period}")
-        print(f" -> Digit Only Status : {self.trigger_details['do']}")
-        print(f" -> Hexadecimal Status: {self.trigger_details['hex']}")
-        print(f" -> Digit Master Status: {self.trigger_details['dm']}")
         print("==================================================================\n")
 
     def run(self):
@@ -361,7 +345,6 @@ class MultiStrategyAnalyzer:
                 sys.exit(0)
             except Exception as e:
                 print(f"Loop Error (lot_v5): {e}")
-                traceback.print_exc()
                 time.sleep(5)
 
 # --- Flask Web Server For Render (lot_v5) ---
@@ -380,10 +363,8 @@ def keep_alive():
     t.start()
 
 if __name__ == "__main__":
-    # ၁။ ဝဘ်ဆာဗာကို နောက်ကွယ်တွင် Run ရန် တို့ပေးခြင်း
     keep_alive()
     time.sleep(2)
     
-    # ၂။ ပင်မ Analysis Engine ကို စတင်ပတ်ခြင်း
     analyzer = MultiStrategyAnalyzer()
     analyzer.run()
