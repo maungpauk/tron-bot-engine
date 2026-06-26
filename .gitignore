@@ -1,4 +1,5 @@
 credentials.json
 __pycache__/
 *.pyc
-credentials.json:Zone.Identifier
+.claude/
+note.txt

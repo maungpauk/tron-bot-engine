@@ -1,5 +1,5 @@
 # TRON Multi-Strategy Master Engine
-# Version 5.6 (Telegram Live Alerts Integrated)
+# Version 5.5 (Cloud & Google Sheets Variable Optimized)
 
 from threading import Thread
 from flask import Flask
@@ -63,36 +63,20 @@ class MultiStrategyAnalyzer:
         # Last Completed UI Cache
         self.last_completed_output = ""
 
-        # Telegram Configuration
-        self.bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-        self.channel_id = os.environ.get("TELEGRAM_CHANNEL_ID")
-
         self.sheet = self.connect_google_sheets()
 
-    def send_telegram_message(self, text):
-        """ Telegram Channel သို့ Real-time စာသားပို့ပေးသည့် Function """
-        if not self.bot_token or not self.channel_id:
-            return  # Config မရှိပါက ပျက်ကွက်မှုမဖြစ်စေရန် Skip မည်
-        try:
-            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-            payload = {
-                "chat_id": self.channel_id,
-                "text": text,
-                "parse_mode": "Markdown"  # စာသားများ လှပစွာ မြင်ရစေရန်
-            }
-            requests.post(url, json=payload, timeout=5)
-        except Exception as e:
-            print(f"[❌] Telegram Alert Error: {e}")
-
+    # --- Google Sheets Tab သီးသန့်ဆောက်ပြီး ချိတ်ဆက်သည့် စနစ် ---
     def connect_google_sheets(self):
         try:
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+            
             creds_json = os.environ.get("GOOGLE_CREDENTIALS")
             if not creds_json:
                 print("Local Mode: Loading credentials.json file...")
                 creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
             else:
                 print("Cloud Mode: Loading credentials from Environment Variable...")
+                # .strip() ထည့်ပေးခြင်းဖြင့် ရှေ့နှင့်နောက်က space အပိုများကို ဖယ်ရှားပေးပါမည်
                 cleaned_json = creds_json.strip()
                 fixed_json = cleaned_json.replace('\n', '\\n').replace('\\\\n', '\\n')
                 info = json.loads(fixed_json, strict=False)
@@ -221,59 +205,38 @@ class MultiStrategyAnalyzer:
         b_time = datetime.fromtimestamp(block['timestamp'] / 1000, tz=MYANMAR_TZ)
         hash_val = block['hash']
         
-        # Track တွက်ချက်မှုပြုလုပ်ခဲ့သလား သိရှိရန် flag သုံးမည်
-        prediction_triggered = False
-
         if b_time.second == self.best_secs["do"] and self.best_secs["do"] != -1:
             src = self.get_digit_only_group(hash_val)
             if src:
-                prediction_triggered = True
                 if self.best_secs["do"] > 42 or self.best_secs["do"] in [18]: 
                     self.current_predictions["do"] = "Skip"
-                    self.trigger_details["do"] = f"{self.best_secs['do']}s -> Skip"
+                    self.trigger_details["do"] = f"{self.best_secs['do']} -> Skip"
                 else:
                     self.current_predictions["do"] = src
-                    self.trigger_details["do"] = f"{self.best_secs['do']}s -> {src}"
+                    self.trigger_details["do"] = f"{self.best_secs['do']} -> {src}"
 
         if b_time.second == self.best_secs["hex"] and self.best_secs["hex"] != -1:
             src = self.get_hexadecimal_group(hash_val)
             if src:
-                prediction_triggered = True
                 if self.best_secs["hex"] > 42:
                     self.current_predictions["hex"] = "Skip"
-                    self.trigger_details["hex"] = f"{self.best_secs['hex']}s -> Skip"
+                    self.trigger_details["hex"] = f"{self.best_secs['hex']} -> Skip"
                 else:
                     self.current_predictions["hex"] = src
-                    self.trigger_details["hex"] = f"{self.best_secs['hex']}s -> {src}"
+                    self.trigger_details["hex"] = f"{self.best_secs['hex']} -> {src}"
 
         if b_time.second == self.best_secs["dm"] and self.best_secs["dm"] != -1:
             src = self.get_digit_master_group(hash_val)
             if src:
-                prediction_triggered = True
                 if self.best_secs["dm"] > 42 or self.best_secs["dm"] in [9, 18] or self.best_rates["dm"] < WIN_RATE_PLAY_THRESHOLD:
                     self.current_predictions["dm"] = "Skip"
-                    self.trigger_details["dm"] = f"{self.best_secs['dm']}s -> Skip"
+                    self.trigger_details["dm"] = f"{self.best_secs['dm']} -> Skip"
                 elif self.best_secs["dm"] in [3, 12]: 
                     self.current_predictions["dm"] = "B" if src == "S" else "S"
-                    self.trigger_details["dm"] = f"{self.best_secs['dm']}s -> {self.current_predictions['dm']}"
+                    self.trigger_details["dm"] = f"{self.best_secs['dm']} -> {self.current_predictions['dm']}"
                 else:
                     self.current_predictions["dm"] = src
-                    self.trigger_details["dm"] = f"{self.best_secs['dm']}s -> {src}"
-
-        # --- TELEGRAM LIVE PREDICTION ALERT ---
-        # Prediction Signal ထွက်ပေါ်လာချိန်တွင် Telegram သို့ ချက်ချင်း လှမ်းပို့မည်
-        if prediction_triggered:
-            target_period = self._generate_prediction_id()
-            tg_pred_msg = (
-                f"🔮 *[LIVE SIGNAL]* 🔮\n"
-                f"🆔 *Prediction ID:* `{target_period}`\n"
-                f"⏱️ *Trigger Time:* {b_time.strftime('%H:%M:%S')}\n"
-                f"──────────────────\n"
-                f"▫️ *DO:* {self.trigger_details['do']}\n"
-                f"▫️ *Hex:* {self.trigger_details['hex']}\n"
-                f"▫️ *DM:* {self.trigger_details['dm']}"
-            )
-            self.send_telegram_message(tg_pred_msg)
+                    self.trigger_details["dm"] = f"{self.best_secs['dm']} -> {src}"
 
         if b_time.second == RESULT_CHECK_SECOND and not self.predictions_made_for_period:
             target_period = self._generate_prediction_id()
@@ -303,7 +266,6 @@ class MultiStrategyAnalyzer:
         disp_hex = "Skipped" if outcomes["hex"] == "Skipped" else self.update_streak("hex", outcomes["hex"])
         disp_dm = "Skipped" if outcomes["dm"] == "Skipped" else self.update_streak("dm", outcomes["dm"])
 
-        # Console UI Output Cache
         sb = []
         sb.append(f"--- Last Completed Group ---")
         sb.append(f"ID: {target_period} | Block: {result_block_id}")
@@ -313,21 +275,6 @@ class MultiStrategyAnalyzer:
         sb.append(f"Digit Master Engine: {self.current_predictions['dm']} => {actual_res} | {disp_dm}")
         sb.append(f"--------------------------")
         self.last_completed_output = "\n".join(sb)
-
-        # --- TELEGRAM RESULT ALERT ---
-        # Target Block (:54s) ရလဒ်ထွက်လာချိန်တွင် Telegram သို့ Final Result ပို့ပေးမည်
-        tg_res_msg = (
-            f"🏁 *[FINAL MATCH RESULT]* 🏁\n"
-            f"🆔 *ID:* `{target_period}` | 📦 *Block:* `{result_block_id}`\n"
-            f"🎯 *Target Result:* `{actual_res}`\n"
-            f"──────────────────\n"
-            f"🔹 *Digit Only Logic:* {self.current_predictions['do']} ➔ {disp_do}\n"
-            f"🔹 *Hexadecimal Logic:* {self.current_predictions['hex']} ➔ {disp_hex}\n"
-            f"👑 *Digit Master Engine:* {self.current_predictions['dm']} ➔ {disp_dm}\n"
-            f"──────────────────\n"
-            f"📊 *Time Logged:* {mm_date} {mm_time}"
-        )
-        self.send_telegram_message(tg_res_msg)
 
         if self.sheet is None:
             self.sheet = self.connect_google_sheets()
