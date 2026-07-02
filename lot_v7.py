@@ -1,5 +1,5 @@
 # TRON Multi-Strategy Master Engine
-# Version 7.6 (Google Sheets Storage Engine Fully Fixed & Re-architected)
+# Version 7.7 (Strict Google Sheets Protocol Ported from v5)
 # Strategy 1: Primary Direct Engine (-12 Mins Ago :27s) | WinRate: 53.99%
 # Strategy 2: Secondary Direct Engine (-8 Mins Ago :42s) | WinRate: 53.35%
 
@@ -14,6 +14,7 @@ import csv
 import re
 import pytz
 import json
+import traceback
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -70,7 +71,7 @@ class MultiStrategyAnalyzer:
         # Local Backup CSV Initialization
         self.init_csv_file()
         
-        # Connect Google Sheets Cloud Database
+        # Connect Google Sheets Cloud Database Using strict lot_v5 pattern
         self.sheet = self.connect_google_sheets()
 
     def send_telegram_message(self, text):
@@ -88,19 +89,20 @@ class MultiStrategyAnalyzer:
             print(f"[❌] Telegram Alert Error: {e}")
 
     def connect_google_sheets(self):
-        """ Google Sheets API Connection Core Engine """
+        """ Google Sheets Connection Logic - Directly Adapted from lot_v5.py """
         try:
-            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+            # STRICT PORT FROM v5: Exact Scope array utilized in lot_v5
+            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
             
+            creds_json = os.environ.get("GOOGLE_CREDENTIALS")
             if not creds_json:
-                print("[Local Mode] Detecting credentials.json file...")
+                print("[Local Mode] Loading credentials.json file (v5 Method)...")
                 if not os.path.exists(CREDENTIALS_FILE):
-                    print(f"[⚠️] Critical: {CREDENTIALS_FILE} missing locally!")
+                    print(f"[⚠️] Critical Error: Local {CREDENTIALS_FILE} not found!")
                     return None
                 creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
             else:
-                print("[Cloud Mode] Activating Service Account via Environment Variable...")
+                print("[Cloud Mode] Loading credentials from Render Env (v5 Method)...")
                 cleaned_json = creds_json.strip()
                 fixed_json = cleaned_json.replace('\n', '\\n').replace('\\\\n', '\\n')
                 info = json.loads(fixed_json, strict=False)
@@ -111,26 +113,22 @@ class MultiStrategyAnalyzer:
             
             try:
                 sheet_instance = spreadsheet.worksheet(WORKSHEET_NAME)
+                print(f"[✅] Found existing worksheet tab: '{WORKSHEET_NAME}'")
             except gspread.exceptions.WorksheetNotFound:
-                print(f"[🔄] Tab '{WORKSHEET_NAME}' not found. Spawning dynamic worksheet tab...")
-                sheet_instance = spreadsheet.add_worksheet(title=str(WORKSHEET_NAME), rows="10000", cols="15")
+                print(f"[🔄] Tab '{WORKSHEET_NAME}' not found. Generating new tab dynamically...")
+                sheet_instance = spreadsheet.add_worksheet(title=WORKSHEET_NAME, rows="10000", cols="15")
+                # Append standard row header on creation
+                sheet_instance.append_row([
+                    "date", "block_time", "block_id", "result_id",
+                    "pred_primary_12m", "pred_secondary_8m", "result",
+                    "out_primary_12m", "out_secondary_8m"
+                ], value_input_option="RAW")
             
-            # Ensure Header Setup exists
-            try:
-                headers = sheet_instance.get_all_values()
-                if not headers or len(headers) == 0:
-                    sheet_instance.append_row([
-                        "date", "block_time", "block_id", "result_id",
-                        "pred_primary_12m", "pred_secondary_8m", "result",
-                        "out_primary_12m", "out_secondary_8m"
-                    ])
-            except Exception:
-                pass
-                
-            print(f"[✅] Connected to Spreadsheet: '{GOOGLE_SHEET_NAME}' -> Tab: '{WORKSHEET_NAME}'")
+            print(f"[✅] Google Sheets Subsystem Fully Synced to: '{GOOGLE_SHEET_NAME}' -> Tab: '{WORKSHEET_NAME}'")
             return sheet_instance
         except Exception as e:
-            print(f"[❌] Google Sheets Cloud Authentication Failed: {e}")
+            print(f"[❌] Google Sheets Connection Core Failure: {e}")
+            traceback.print_exc()
             return None
 
     def init_csv_file(self):
@@ -243,7 +241,7 @@ class MultiStrategyAnalyzer:
         if prediction_triggered:
             target_period = self._generate_prediction_id()
             tg_pred_msg = (
-                f"🔮 *[v7.6 LIVE SIGNAL]* 🔮\n"
+                f"🔮 *[v7.7 LIVE SIGNAL]* 🔮\n"
                 f"🆔 *Prediction ID:* `{target_period}`\n"
                 f"⏱️ *Trigger Time:* {b_time.strftime('%H:%M:%S')}\n"
                 f"──────────────────\n"
@@ -275,7 +273,7 @@ class MultiStrategyAnalyzer:
 
     def verify_and_log_results(self, target_period, current_block, mm_date, mm_time):
         actual_res = self.get_digit_master_group(current_block['hash'])
-        result_block_id = str(current_block['Block height'])
+        result_block_id = current_block['Block height']
         
         outcomes = {}
         for k in ["primary_12m", "secondary_8m"]:
@@ -298,7 +296,7 @@ class MultiStrategyAnalyzer:
 
         # --- TELEGRAM MATCH RESULT ALERT ---
         tg_res_msg = (
-            f"🏁 *[v7.6 MATCH RESULT]* 🏁\n"
+            f"🏁 *[v7.7 MATCH RESULT]* 🏁\n"
             f"🆔 *ID:* `{target_period}` | 📦 *Block:* `{result_block_id}`\n"
             f"🎯 *Target Result:* `{actual_res}`\n"
             f"──────────────────\n"
@@ -321,34 +319,33 @@ class MultiStrategyAnalyzer:
         except Exception as e:
             print(f"[❌] CSV Write Backup Error: {e}")
 
-        # --- GOOGLE SHEETS DUMP ROUTINE (FIXED & RE-ARCHITECTED) ---
+        # --- STRICT PORT FROM v5: GOOGLE SHEETS APPEND BLOCK ---
+        # `lot_v5.py` ရဲ့ ဒေတာသိမ်းဆည်းပုံစံအတိုင်း မူရင်း format ကို ပြန်ပြောင်းလဲအသုံးပြုထားပါတယ်
         row_data = [
-            str(mm_date), str(mm_time), str(result_block_id), str(target_period),
-            str(self.current_predictions['primary_12m']), str(self.current_predictions['secondary_8m']),
-            str(actual_res), str(outcomes['primary_12m']), str(outcomes['secondary_8m'])
+            mm_date, mm_time, result_block_id, target_period,
+            self.current_predictions['primary_12m'], self.current_predictions['secondary_8m'],
+            actual_res, outcomes['primary_12m'], outcomes['secondary_8m']
         ]
 
-        # BUG FIX: Loop explicitly checks self.sheet scope with proper User Entered Token Option
-        for attempt in range(2):
-            if self.sheet is None:
-                print("[🔄] Reconnecting Google Sheets...")
-                self.sheet = self.connect_google_sheets()
-                
-            if self.sheet is not None:
-                try:
-                    # Robust cloud row appending strategy using append_rows block
-                    self.sheet.append_rows([row_data], value_input_option='USER_ENTERED')
-                    print(f"🚀 [Cloud Logged] Data row saved in Google Sheet '{WORKSHEET_NAME}' tab successfully!")
-                    break
-                except Exception as sheet_err:
-                    print(f"[❌] Sheet append failed on attempt {attempt+1}: {sheet_err}")
-                    self.sheet = None  # Force reconnection protocol on next attempt
-            else:
-                print(f"[⚠️] Google Sheet Instance is missing on attempt {attempt+1}. Retrying...")
+        if self.sheet is None:
+            print("[🔄] Google Sheet instance was None, re-connecting...")
+            self.sheet = self.connect_google_sheets()
+
+        if self.sheet is not None:
+            try:
+                # STRICT PORT FROM v5: Using exactly `append_row` with `value_input_option="RAW"`
+                self.sheet.append_row(row_data, value_input_option="RAW")
+                print(f"🚀 [Cloud Logged] v5-Method append_row success on tab '{WORKSHEET_NAME}'!")
+            except Exception as sheet_err:
+                print(f"[❌] Google Sheet append_row failed: {sheet_err}")
+                # If token expired or failed, clear instance to force re-auth next minute
+                self.sheet = None
+        else:
+            print("[⚠️] Google Sheet cannot log row because connection is unavailable.")
 
     def print_status(self):
         now_str = get_myanmar_time().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"--- TRON Dual-Strategy Master Engine v7.6 | Last Update: {now_str} ---\n")
+        print(f"--- TRON Dual-Strategy Master Engine v7.7 | Last Update: {now_str} ---\n")
         
         if self.display_completed_group_now and self.last_completed_output:
             print(self.last_completed_output)
@@ -406,10 +403,10 @@ class MultiStrategyAnalyzer:
             except requests.exceptions.RequestException:
                 time.sleep(5)
             except KeyboardInterrupt:
-                print("\nShutdown Matrix v7.6 Complete.")
+                print("\nShutdown Matrix v7.7 Complete.")
                 sys.exit(0)
             except Exception as e:
-                print(f"Loop Runtime Error (v7.6): {e}")
+                print(f"Loop Runtime Error (v7.7): {e}")
                 time.sleep(5)
 
 # --- Flask Web Server For Render ---
@@ -417,7 +414,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "TRON Dual-Strategy Master Engine v7.6 is Running Live on Render!"
+    return "TRON Dual-Strategy Master Engine v7.7 is Running Live on Render!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
