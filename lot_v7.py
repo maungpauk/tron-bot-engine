@@ -1,5 +1,5 @@
-# TRON Dual-Strategy Master Engine
-# Version 7.4 (Render Web Server, Telegram Alerts & Google Sheets Integrated)
+# TRON Multi-Strategy Master Engine
+# Version 7.5 (Google Sheets Data Sync Bug Fixed)
 # Strategy 1: Primary Direct Engine (-12 Mins Ago :27s) | WinRate: 53.99%
 # Strategy 2: Secondary Direct Engine (-8 Mins Ago :42s) | WinRate: 53.35%
 
@@ -63,7 +63,7 @@ class MultiStrategyAnalyzer:
         # UI Cache
         self.last_completed_output = ""
 
-        # Telegram Configuration (Environment Variables)
+        # Telegram Configuration
         self.bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
         self.channel_id = os.environ.get("TELEGRAM_CHANNEL_ID")
         
@@ -74,7 +74,6 @@ class MultiStrategyAnalyzer:
         self.sheet = self.connect_google_sheets()
 
     def send_telegram_message(self, text):
-        """ Telegram Channel သို့ Real-time Signals နှင့် ရလဒ်များ လှမ်းပို့ပေးသည့် Function """
         if not self.bot_token or not self.channel_id:
             return  
         try:
@@ -89,7 +88,7 @@ class MultiStrategyAnalyzer:
             print(f"[❌] Telegram Alert Error: {e}")
 
     def connect_google_sheets(self):
-        """ Google Sheets Cloud Setup (Support both Local credentials.json & Render Environment Env) """
+        """ Google Sheets Cloud Connection Block """
         try:
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
             creds_json = os.environ.get("GOOGLE_CREDENTIALS")
@@ -109,10 +108,12 @@ class MultiStrategyAnalyzer:
             try:
                 sheet = spreadsheet.worksheet(WORKSHEET_NAME)
             except gspread.exceptions.WorksheetNotFound:
-                # 'lot_v7_logs' တက်ဘ်အသစ်မရှိပါက အလိုအလျောက် အသစ်ဆောက်ပေးခြင်း
-                sheet = spreadsheet.add_worksheet(title=WORKSHEET_NAME, rows="5000", cols="15")
+                # Create the worksheet if it doesn't exist
+                sheet = spreadsheet.add_worksheet(title=str(WORKSHEET_NAME), rows="5000", cols="15")
             
-            if not sheet.get_all_values():
+            # Header check
+            headers = sheet.get_all_values()
+            if not headers or len(headers) == 0:
                 sheet.append_row([
                     "date", "block_time", "block_id", "result_id",
                     "pred_primary_12m", "pred_secondary_8m", "result",
@@ -125,7 +126,6 @@ class MultiStrategyAnalyzer:
             return None
 
     def init_csv_file(self):
-        """ Local Storage Backup CSV Log """
         if not os.path.exists(LOG_FILENAME):
             with open(LOG_FILENAME, mode='w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -144,7 +144,6 @@ class MultiStrategyAnalyzer:
         return f"{date_part}{series_part}{sequence:04d}"
 
     def get_digit_master_group(self, hash_value):
-        """ Core block hash digit logic parser """
         if not hash_value: return None
         digits = "".join(re.findall(r'\d', hash_value))
         if not digits: return None
@@ -196,7 +195,6 @@ class MultiStrategyAnalyzer:
         current_m_key = b_time.strftime("%Y-%m-%d %H:%M")
         sec = b_time.second
         
-        # --- Live Memory Cumulative Store Routine ---
         if current_m_key not in self.lag_time_memory:
             self.lag_time_memory[current_m_key] = {}
         self.lag_time_memory[current_m_key][sec] = self.get_digit_master_group(hash_val)
@@ -233,11 +231,11 @@ class MultiStrategyAnalyzer:
                 self.current_predictions["secondary_8m"] = "Skip"
                 self.trigger_details["secondary_8m"] = "Skip (Syncing 8m Memory...)"
 
-        # --- TELEGRAM REAL-TIME PREDICTION SIGNAL ALERT ---
+        # --- TELEGRAM SIGNAL ALERT ---
         if prediction_triggered:
             target_period = self._generate_prediction_id()
             tg_pred_msg = (
-                f"🔮 *[v7.4 LIVE SIGNAL]* 🔮\n"
+                f"🔮 *[v7.5 LIVE SIGNAL]* 🔮\n"
                 f"🆔 *Prediction ID:* `{target_period}`\n"
                 f"⏱️ *Trigger Time:* {b_time.strftime('%H:%M:%S')}\n"
                 f"──────────────────\n"
@@ -269,7 +267,7 @@ class MultiStrategyAnalyzer:
 
     def verify_and_log_results(self, target_period, current_block, mm_date, mm_time):
         actual_res = self.get_digit_master_group(current_block['hash'])
-        result_block_id = current_block['Block height']
+        result_block_id = str(current_block['Block height']) # BUG FIX: Convert to safe string formatting
         
         outcomes = {}
         for k in ["primary_12m", "secondary_8m"]:
@@ -280,7 +278,7 @@ class MultiStrategyAnalyzer:
         disp_primary = "Skipped" if outcomes["primary_12m"] == "Skipped" else self.update_streak("primary_12m", outcomes["primary_12m"])
         disp_secondary = "Skipped" if outcomes["secondary_8m"] == "Skipped" else self.update_streak("secondary_8m", outcomes["secondary_8m"])
 
-        # UI Terminal Stream Output Construction
+        # UI Terminal Output Construction
         sb = []
         sb.append(f"--- Last Completed Group ---")
         sb.append(f"ID: {target_period} | Block: {result_block_id}")
@@ -292,7 +290,7 @@ class MultiStrategyAnalyzer:
 
         # --- TELEGRAM MATCH RESULT ALERT ---
         tg_res_msg = (
-            f"🏁 *[v7.4 MATCH RESULT]* 🏁\n"
+            f"🏁 *[v7.5 MATCH RESULT]* 🏁\n"
             f"🆔 *ID:* `{target_period}` | 📦 *Block:* `{result_block_id}`\n"
             f"🎯 *Target Result:* `{actual_res}`\n"
             f"──────────────────\n"
@@ -303,7 +301,7 @@ class MultiStrategyAnalyzer:
         )
         self.send_telegram_message(tg_res_msg)
 
-        # --- Local Backup CSV Data Write ---
+        # --- Local Backup CSV Write ---
         try:
             with open(LOG_FILENAME, mode='a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
@@ -315,25 +313,29 @@ class MultiStrategyAnalyzer:
         except Exception as e:
             print(f"[❌] CSV Write Backup Error: {e}")
 
-        # --- GOOGLE SHEETS CLOUD ROW APPEND ROUTINE ---
-        if self.sheet is None:
-            self.sheet = self.connect_google_sheets()
+        # --- BUG FIX: GOOGLE SHEETS DUMP ROUTINE (STRICTLY FORMATTED AS STRINGS) ---
+        row_data = [
+            str(mm_date), str(mm_time), str(result_block_id), str(target_period),
+            str(self.current_predictions['primary_12m']), str(self.current_predictions['secondary_8m']),
+            str(actual_res), str(outcomes['primary_12m']), str(outcomes['secondary_8m'])
+        ]
 
-        if self.sheet:
-            try:
-                row_data = [
-                    mm_date, mm_time, result_block_id, target_period,
-                    self.current_predictions['primary_12m'], self.current_predictions['secondary_8m'],
-                    actual_res, outcomes['primary_12m'], outcomes['secondary_8m']
-                ]
-                self.sheet.append_row(row_data)
-                print(f"🚀 [Cloud Logged] Successfully dumped matrix row to Google Sheets '{WORKSHEET_NAME}' tab!")
-            except Exception as e:
-                print(f"[❌] Google Sheets Row Appending Error: {e}")
+        # Auto retry/reconnect block if API drops
+        for attempt in range(2):
+            if self.sheet is None:
+                self.sheet = self.connect_google_sheets()
+            if self.sheet:
+                try:
+                    self.sheet.append_row(row_data)
+                    print(f"🚀 [Cloud Logged] Row appended successfully to sheet '{WORKSHEET_NAME}' tab!")
+                    break
+                except Exception as sheet_err:
+                    print(f"[⚠️] Sheet append failed on attempt {attempt+1}: {sheet_err}")
+                    self.sheet = None # Wipe connection cache to force re-auth on next loop
 
     def print_status(self):
         now_str = get_myanmar_time().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"--- TRON Dual-Strategy Master Engine v7.4 | Last Update: {now_str} ---\n")
+        print(f"--- TRON Dual-Strategy Master Engine v7.5 | Last Update: {now_str} ---\n")
         
         if self.display_completed_group_now and self.last_completed_output:
             print(self.last_completed_output)
@@ -391,18 +393,18 @@ class MultiStrategyAnalyzer:
             except requests.exceptions.RequestException:
                 time.sleep(5)
             except KeyboardInterrupt:
-                print("\nShutdown Matrix v7.4 Complete.")
+                print("\nShutdown Matrix v7.5 Complete.")
                 sys.exit(0)
             except Exception as e:
-                print(f"Loop Runtime Error (v7.4): {e}")
+                print(f"Loop Runtime Error (v7.5): {e}")
                 time.sleep(5)
 
-# --- Flask Web Server For Render (Keep-Alive Multi-threading Architecture) ---
+# --- Flask Web Server For Render ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "TRON Dual-Strategy Master Engine v7.4 is Running Live on Render!"
+    return "TRON Dual-Strategy Master Engine v7.5 is Running Live on Render!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
@@ -413,7 +415,6 @@ def keep_alive():
     t.start()
 
 if __name__ == "__main__":
-    # Flask Web Server ကို Thread သီးသန့်ဖြင့် နောက်ခံတွင် အရင်မောင်းနှင်ထားမည်
     keep_alive()
     time.sleep(2)
     
